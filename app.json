@@ -26,9 +26,6 @@
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
       "permissions": []
-    },
-    "plugins": [
-      "expo-keep-awake"
-    ]
+    }
   }
 }
