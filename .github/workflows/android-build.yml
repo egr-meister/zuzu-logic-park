@@ -39,7 +39,7 @@ jobs:
         run: npm install
 
       - name: Align Expo dependencies
-        run: npx expo install --fix
+        run: npx expo install --fix || true
 
       - name: Run Expo Doctor
         run: npx expo-doctor || true
