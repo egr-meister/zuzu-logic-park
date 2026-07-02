@@ -56,16 +56,37 @@ def main():
         count=1,
         flags=re.S,
     )
-    if count == 0:
-        print("WARNING: could not rewire release buildType signingConfig; "
-              "the release build may still use the debug key.")
-    else:
+    if count > 0:
         gradle = new_gradle
 
     with open(GRADLE_PATH, "w") as f:
         f.write(gradle)
 
-    print("Signing configured in %s" % GRADLE_PATH)
+    # 3) Hard verification: the release buildType MUST reference
+    #    signingConfigs.release. If not, fail loudly so we never silently
+    #    produce a debug-signed release (which Google Play rejects).
+    release_block = re.search(
+        r"buildTypes\s*\{.*?release\s*\{(.*?)\n        \}",
+        gradle,
+        flags=re.S,
+    )
+    uses_release = bool(
+        re.search(
+            r"release\s*\{[^}]*?signingConfig\s+signingConfigs\.release",
+            gradle,
+            flags=re.S,
+        )
+    )
+    if not uses_release:
+        print("ERROR: release buildType is NOT using signingConfigs.release.")
+        print("Refusing to continue to avoid a debug-signed release build.")
+        if release_block:
+            print("--- release buildType block ---")
+            print(release_block.group(1))
+        sys.exit(1)
+
+    print("Signing configured in %s (release buildType -> signingConfigs.release)"
+          % GRADLE_PATH)
 
 
 if __name__ == "__main__":

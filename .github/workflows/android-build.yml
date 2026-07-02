@@ -50,6 +50,18 @@ jobs:
       - name: Prebuild Android project (clean)
         run: npx expo prebuild --platform android --clean
 
+      - name: Force API level 35 (Google Play requirement)
+        run: |
+          {
+            echo ""
+            echo "# Google Play requires targeting API level 35+ and 16 KB page support"
+            echo "android.compileSdkVersion=35"
+            echo "android.targetSdkVersion=35"
+            echo "android.buildToolsVersion=35.0.0"
+          } >> android/gradle.properties
+          echo "SDK settings now in android/gradle.properties:"
+          grep -E "SdkVersion|buildToolsVersion" android/gradle.properties
+
       - name: Decode release keystore from secret
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -66,6 +78,41 @@ jobs:
           ZUZU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ZUZU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify APK is release-signed (not debug)
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools/35.0.0" -name apksigner | head -n1)
+          echo "Using: $APKSIGNER"
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK")
+          echo "$CERTS"
+          if echo "$CERTS" | grep -qi "Android Debug"; then
+            echo "::error::APK is signed with the DEBUG key. Aborting."
+            exit 1
+          fi
+          if ! echo "$CERTS" | grep -q "Zuzu Logic Park"; then
+            echo "::error::APK is not signed with the Zuzu release key. Aborting."
+            exit 1
+          fi
+          echo "OK: APK is signed with the Zuzu Logic Park release key."
+
+      - name: Verify targetSdkVersion is 35 (Google Play requirement)
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          AAPT=$(find "$ANDROID_HOME/build-tools/35.0.0" -name aapt | head -n1)
+          if [ -z "$AAPT" ]; then
+            AAPT=$(find "$ANDROID_HOME/build-tools/35.0.0" -name aapt2 | head -n1)
+          fi
+          echo "Using: $AAPT"
+          BADGING=$("$AAPT" dump badging "$APK")
+          echo "$BADGING" | grep -E "targetSdkVersion|sdkVersion" || true
+          TARGET=$(echo "$BADGING" | sed -n "s/.*targetSdkVersion:'\([0-9]*\)'.*/\1/p")
+          echo "Detected targetSdkVersion: $TARGET"
+          if [ "$TARGET" -lt 35 ]; then
+            echo "::error::targetSdkVersion is $TARGET, but Google Play requires >= 35. Aborting."
+            exit 1
+          fi
+          echo "OK: targetSdkVersion is $TARGET (>= 35)."
 
       - name: Build signed release AAB
         working-directory: android
